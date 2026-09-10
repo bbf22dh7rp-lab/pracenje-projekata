@@ -32,6 +32,7 @@
       <div class="auth-brand"><span class="brand-mark">PR</span><div><strong>Praćenje projekata</strong><small>Centralna evidencija realizacije</small></div></div>
       <p class="eyebrow">SIGURAN PRISTUP</p><h1 id="authTitle">Prijava u aplikaciju</h1>
       <p class="auth-copy" id="authCopy">Prijavite se službenom e-mail adresom i lozinkom.</p>
+      <p class="auth-message" id="authMessage" hidden></p>
       <form id="authForm">
         <label id="nameField" hidden>Ime i prezime<input id="authName" maxlength="120" autocomplete="name"></label>
         <label>E-mail adresa<input id="authEmail" type="email" required autocomplete="email"></label>
@@ -39,7 +40,7 @@
         <button class="primary wide" id="authSubmit" type="submit">Prijavi se</button>
       </form>
       <div class="auth-links"><button class="link-btn" id="toggleAuth" type="button">Prvo korištenje? Kreiraj račun</button><button class="link-btn" id="forgotPassword" type="button">Zaboravljena lozinka</button></div>
-      <p class="auth-message" id="authMessage" hidden></p>
+      <small>Verzija 11</small>
     </div>
   </section>
 
@@ -132,7 +133,7 @@ function withTimeout(request,message='Veza sa bazom traje predugo. Provjerite in
 const requestSignal=()=>AbortSignal.timeout(REQUEST_TIMEOUT_MS);
 
 async function requestAuthSession(email,password){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),REQUEST_TIMEOUT_MS);try{const response=await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`,{method:'POST',headers:{apikey:SUPABASE_KEY,'Content-Type':'application/json;charset=UTF-8'},body:JSON.stringify({email,password}),signal:controller.signal});let payload={};try{payload=await response.json()}catch{}if(!response.ok)throw new Error(payload.msg||payload.message||payload.error_description||payload.error||`Prijava nije uspjela (${response.status}).`);if(!payload.access_token||!payload.user)throw new Error('Supabase nije vratio potpunu korisničku sesiju.');return payload}finally{clearTimeout(timer)}}
-function useAuthSession(session){authSession=session;db=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{accessToken:async()=>authSession?.access_token||null})}
+function useAuthSession(session){authSession=session;db=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{global:{headers:{Authorization:`Bearer ${session.access_token}`}},auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}})}
 function clearAuthSession(){authSession=null;db=authDb}
 
 function showLoading(value){const authVisible=!$('authShell').hidden;$('loading').hidden=!value||authVisible;if(authVisible){$('authSubmit').disabled=value;$('authSubmit').textContent=value?'Povezivanje…':state.authMode==='signup'?'Kreiraj račun':state.authMode==='reset'?'Sačuvaj novu lozinku':'Prijavi se'}}
@@ -151,7 +152,7 @@ function deadlineClass(p){if(p.status==='zavrsen')return'';const d=daysTo(p.dead
 function setAuthMode(mode){state.authMode=mode;const signup=mode==='signup',reset=mode==='reset';$('authTitle').textContent=signup?'Kreiraj korisnički račun':reset?'Postavite novu lozinku':'Prijava u aplikaciju';$('authCopy').textContent=signup?'Koristite e-mail adresu koju je administrator prethodno odobrio.':reset?'Unesite novu lozinku za svoj račun.':'Prijavite se službenom e-mail adresom i lozinkom.';$('nameField').hidden=!signup;$('authEmail').parentElement.hidden=reset;$('authSubmit').textContent=signup?'Kreiraj račun':reset?'Sačuvaj novu lozinku':'Prijavi se';$('toggleAuth').textContent=signup?'Već imate račun? Prijavite se':'Prvo korištenje? Kreiraj račun';$('toggleAuth').hidden=reset;$('forgotPassword').hidden=signup||reset;$('authPassword').autocomplete=signup||reset?'new-password':'current-password';showAuthMessage('')}
 
 const authReturnUrl=()=>location.href.split(/[?#]/)[0];
-async function handleAuthSubmit(event){event.preventDefault();showAuthMessage('');showLoading(true);try{const email=$('authEmail').value.trim().toLowerCase(),password=$('authPassword').value;if(state.authMode==='signup'){const {data,error}=await withTimeout(authDb.auth.signUp({email,password,options:{emailRedirectTo:authReturnUrl(),data:{full_name:$('authName').value.trim()}}}));if(error)throw error;if(data.session){useAuthSession(data.session);scheduleSessionStart(data.session.user)}else showAuthMessage('Račun je kreiran. Provjerite e-mail i potvrdite registraciju.')}else if(state.authMode==='reset'){const {data,error}=await withTimeout(authDb.auth.updateUser({password}));if(error)throw error;showToast('Nova lozinka je sačuvana.');const {data:sessionData}=await withTimeout(authDb.auth.getSession());if(sessionData.session){useAuthSession(sessionData.session);scheduleSessionStart(data.user)}}else{const session=await requestAuthSession(email,password);useAuthSession(session);scheduleSessionStart(session.user)}}catch(error){showAuthMessage(readableError(error),true)}finally{showLoading(false)}}
+async function handleAuthSubmit(event){event.preventDefault();showAuthMessage('');showLoading(true);try{const email=$('authEmail').value.trim().toLowerCase(),password=$('authPassword').value;if(state.authMode==='signup'){const {data,error}=await withTimeout(authDb.auth.signUp({email,password,options:{emailRedirectTo:authReturnUrl(),data:{full_name:$('authName').value.trim()}}}));if(error)throw error;if(data.session){useAuthSession(data.session);startSession(data.session.user)}else showAuthMessage('Račun je kreiran. Provjerite e-mail i potvrdite registraciju.')}else if(state.authMode==='reset'){const {data,error}=await withTimeout(authDb.auth.updateUser({password}));if(error)throw error;showToast('Nova lozinka je sačuvana.');const {data:sessionData}=await withTimeout(authDb.auth.getSession());if(sessionData.session){useAuthSession(sessionData.session);startSession(data.user)}}else{const session=await requestAuthSession(email,password);useAuthSession(session);startSession(session.user)}}catch(error){showAuthMessage(readableError(error),true);$('authMessage').scrollIntoView({behavior:'smooth',block:'center'})}finally{showLoading(false)}}
 
 function scheduleSessionStart(user){if(!user||startingUserId===user.id||(!$('appShell').hidden&&state.user?.id===user.id))return;startingUserId=user.id;setTimeout(()=>startSession(user).finally(()=>{if(startingUserId===user.id)startingUserId=null}),0)}
 

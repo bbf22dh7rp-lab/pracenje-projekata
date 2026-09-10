@@ -40,7 +40,7 @@
         <button class="primary wide" id="authSubmit" type="submit">Prijavi se</button>
       </form>
       <div class="auth-links"><button class="link-btn" id="toggleAuth" type="button">Prvo korištenje? Kreiraj račun</button><button class="link-btn" id="forgotPassword" type="button">Zaboravljena lozinka</button></div>
-      <small>Verzija 11</small>
+      <small>Verzija 12</small>
     </div>
   </section>
 
@@ -123,6 +123,7 @@ const commentLabels={ispostavljena_situacija:'Ispostavljena situacija',dinamika_
 const fullAccessRoles=['nacelnik','pomocnik_razvoj','pomocnik_finansije'];
 const createRoles=['administrator','pomocnik_razvoj','pomocnik_finansije'];
 const REQUEST_TIMEOUT_MS=15000;
+const AUTH_TIMEOUT_MS=45000;
 let state={user:null,profile:null,profiles:[],projects:[],comments:[],invitations:[],selectedId:null,authMode:'login'};
 let startingUserId=null;
 
@@ -132,7 +133,7 @@ function withTimeout(request,message='Veza sa bazom traje predugo. Provjerite in
 }
 const requestSignal=()=>AbortSignal.timeout(REQUEST_TIMEOUT_MS);
 
-async function requestAuthSession(email,password){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),REQUEST_TIMEOUT_MS);try{const response=await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`,{method:'POST',headers:{apikey:SUPABASE_KEY,'Content-Type':'application/json;charset=UTF-8'},body:JSON.stringify({email,password}),signal:controller.signal});let payload={};try{payload=await response.json()}catch{}if(!response.ok)throw new Error(payload.msg||payload.message||payload.error_description||payload.error||`Prijava nije uspjela (${response.status}).`);if(!payload.access_token||!payload.user)throw new Error('Supabase nije vratio potpunu korisničku sesiju.');return payload}finally{clearTimeout(timer)}}
+function requestAuthSession(email,password){return new Promise((resolve,reject)=>{const request=new XMLHttpRequest();request.open('POST',`${SUPABASE_URL}/auth/v1/token?grant_type=password`,true);request.timeout=AUTH_TIMEOUT_MS;request.setRequestHeader('apikey',SUPABASE_KEY);request.setRequestHeader('Content-Type','application/json;charset=UTF-8');request.onload=()=>{let payload={};try{payload=JSON.parse(request.responseText||'{}')}catch{}if(request.status<200||request.status>=300)return reject(new Error(payload.msg||payload.message||payload.error_description||payload.error||`Prijava nije uspjela (${request.status}).`));if(!payload.access_token||!payload.user)return reject(new Error('Supabase nije vratio potpunu korisničku sesiju.'));resolve(payload)};request.onerror=()=>reject(new Error('Mrežna veza sa servisom za prijavu je prekinuta.'));request.ontimeout=()=>reject(new Error('Servis za prijavu nije odgovorio na vrijeme.'));request.send(JSON.stringify({email,password}))})}
 function useAuthSession(session){authSession=session;db=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{global:{headers:{Authorization:`Bearer ${session.access_token}`}},auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}})}
 function clearAuthSession(){authSession=null;db=authDb}
 
